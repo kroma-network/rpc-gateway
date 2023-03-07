@@ -1,0 +1,55 @@
+name: ci
+
+on:
+  push:
+    branches:
+    - dev
+    tags:
+      - '*.*.*'
+
+jobs:
+  ci:
+    name: Run CI
+    strategy:
+      matrix:
+        os: [ ubuntu-latest ]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          submodules: true
+          token: ${{ secrets.KANVAS_GITHUB_REPO_TOKEN }}
+
+      - name: Docker Image Name
+        id: docker-image-name
+        run: |
+          if [[ $GITHUB_REF_TYPE == 'branch' ]];
+          then
+            echo ::set-output name=docker-tag::dev
+          else
+            echo ::set-output name=docker-tag::${GITHUB_REF#refs/tags/}
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ECR_ACCESS_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_ECR_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_ECR_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Publish kanvas RPCGateway
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ secrets.AWS_ECR_REPOSITORY }}/lightscale/kanvas-rpcgateway:${{ steps.docker-image-name.outputs.docker-tag }}
